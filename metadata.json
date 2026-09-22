@@ -1,0 +1,6 @@
+{
+  "name": "Local Job Autofill & Resume Tailor",
+  "description": "Privacy-focused open-source alternative to Simplify for job application auto-completion and resume tailoring using local LLMs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OpenSimplify Copilot</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <div class="header-brand">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        <div class="brand-text">
+          <h1>OpenSimplify</h1>
+          <p>In-Tab Job Copilot</p>
+        </div>
+      </div>
+      <span class="status-badge" id="popup-model-badge">READY</span>
+    </div>
+
+    <div class="popup-body">
+      <!-- Big Action Button -->
+      <button class="btn-primary" id="btn-popup-autofill">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        <span>Autofill Active Tab</span>
+      </button>
+
+      <!-- Active Profile Card -->
+      <div class="info-card">
+        <div class="info-row">
+          <span class="label">Active Profile:</span>
+          <span class="val font-bold" id="popup-profile-name">Alex Morgan</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Email:</span>
+          <span class="val" id="popup-profile-email">alex.morgan.dev@gmail.com</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Backend:</span>
+          <span class="val font-mono" id="popup-backend-name">Ollama (llama3.2)</span>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="actions-grid">
+        <button class="btn-secondary" id="btn-toggle-inpage">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>
+          </svg>
+          <span>Toggle Copilot Drawer</span>
+        </button>
+        <button class="btn-secondary" id="btn-open-app">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/>
+          </svg>
+          <span>Open Full Dashboard</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="popup-footer">
+      <span class="privacy-note">🔒 100% Client-Side &amp; Private</span>
+      <span class="version">v1.0.0</span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
