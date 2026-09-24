@@ -22,6 +22,7 @@ export interface LLMConfig {
   temperature: number;
   maxTokens: number;
   customHeaders?: Record<string, string>;
+  apiKeys?: Partial<Record<LLMBackendType, string>>;
   mode: 'proxy' | 'direct'; // Server proxy (handles CORS/Mixed-Content) or Direct client-side fetch
   status: 'connected' | 'error' | 'testing' | 'idle';
   statusMessage?: string;

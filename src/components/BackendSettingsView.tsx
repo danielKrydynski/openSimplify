@@ -18,7 +18,10 @@ import {
   Search,
   Gift,
   Zap,
-  Layers
+  Layers,
+  Eye,
+  EyeOff,
+  Lock
 } from 'lucide-react';
 import { LLMConfig, LLMBackendType, LLMModelMetadata } from '../types';
 import { StorageService } from '../services/storageService';
@@ -42,6 +45,8 @@ interface BackendPreset {
   description: string;
   envVar?: string;
   providerInfo?: string;
+  keyPlaceholder?: string;
+  keyDocUrl?: string;
 }
 
 const BACKEND_PRESETS: BackendPreset[] = [
@@ -64,7 +69,9 @@ const BACKEND_PRESETS: BackendPreset[] = [
     ],
     description: 'Unified cloud gateway. Connect Claude 3.7 Sonnet, DeepSeek R1, GPT-4o, and 200+ models via secure server proxy.',
     envVar: 'OPENROUTER_API_KEY',
-    providerInfo: 'Requires OPENROUTER_API_KEY in server secrets. API key stays hidden on server.'
+    providerInfo: 'Requires OPENROUTER_API_KEY in server secrets or entered below.',
+    keyPlaceholder: 'sk-or-v1-...',
+    keyDocUrl: 'https://openrouter.ai/keys'
   },
   {
     id: 'claude',
@@ -81,7 +88,9 @@ const BACKEND_PRESETS: BackendPreset[] = [
     ],
     description: 'Direct connection to Anthropic Claude Messages API for tailored job autofill and high-precision resume adaptation.',
     envVar: 'ANTHROPIC_API_KEY',
-    providerInfo: 'Requires ANTHROPIC_API_KEY in server secrets.'
+    providerInfo: 'Requires ANTHROPIC_API_KEY in server secrets or entered below.',
+    keyPlaceholder: 'sk-ant-api03-...',
+    keyDocUrl: 'https://console.anthropic.com/settings/keys'
   },
   {
     id: 'openai',
@@ -93,7 +102,9 @@ const BACKEND_PRESETS: BackendPreset[] = [
     popularModels: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo'],
     description: 'Direct server connection to OpenAI API for GPT-4o and reasoning models.',
     envVar: 'OPENAI_API_KEY',
-    providerInfo: 'Requires OPENAI_API_KEY in server secrets.'
+    providerInfo: 'Requires OPENAI_API_KEY in server secrets or entered below.',
+    keyPlaceholder: 'sk-proj-...',
+    keyDocUrl: 'https://platform.openai.com/api-keys'
   },
   {
     id: 'gemini',
@@ -105,7 +116,9 @@ const BACKEND_PRESETS: BackendPreset[] = [
     popularModels: ['gemini-3.6-flash', 'gemini-3.6-pro'],
     description: 'Server-side Gemini 3.6 Flash/Pro with fast generation and smart job matching.',
     envVar: 'GEMINI_API_KEY',
-    providerInfo: 'Configured via GEMINI_API_KEY in server secrets.'
+    providerInfo: 'Configured via GEMINI_API_KEY in server secrets or entered below.',
+    keyPlaceholder: 'AIzaSy...',
+    keyDocUrl: 'https://aistudio.google.com/app/apikey'
   },
 
   // Local Daemons & Self-Hosted
@@ -190,6 +203,27 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [modelFilter, setModelFilter] = useState<'all' | 'free' | 'popular'>('all');
   const [isScanning, setIsScanning] = useState(false);
+  const [showKeyMap, setShowKeyMap] = useState<Partial<Record<LLMBackendType, boolean>>>({});
+
+  // Toggle API key visibility on provider card
+  const toggleKeyVisibility = (id: LLMBackendType) => {
+    setShowKeyMap(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Update API key for a specific provider
+  const handleUpdateApiKey = (backendId: LLMBackendType, keyVal: string) => {
+    const updatedKeys = {
+      ...(config.apiKeys || {}),
+      [backendId]: keyVal
+    };
+    const updated: LLMConfig = {
+      ...config,
+      apiKeys: updatedKeys
+    };
+    setConfig(updated);
+    StorageService.saveLLMConfig(updated);
+    onConfigUpdated(updated);
+  };
 
   // Load server key detection on mount
   useEffect(() => {
@@ -358,78 +392,53 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
           <div className="flex items-center space-x-2">
             <Key className="w-4 h-4 text-slate-700" />
             <h2 className="text-sm font-bold text-slate-900">
-              Cloud Provider Credentials (Server-Side Secrets)
+              Cloud Provider Credentials &amp; API Keys
             </h2>
           </div>
           <span className="text-[11px] text-slate-500">
-            Keys are securely held in environment variables and never exposed to browser localStorage
+            Configure via server environment or add directly to the provider cards below
           </span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-          <div className={`p-3 rounded-lg border text-xs transition-colors ${
-            serverHealth.hasOpenRouterKey
-              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-              : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
-            <div className="flex items-center justify-between font-semibold">
-              <span>OpenRouter</span>
-              {serverHealth.hasOpenRouterKey ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              ) : (
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">Unset</span>
-              )}
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1 font-mono">OPENROUTER_API_KEY</div>
-          </div>
+          {([
+            { id: 'openrouter' as LLMBackendType, name: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', hasServer: serverHealth.hasOpenRouterKey },
+            { id: 'claude' as LLMBackendType, name: 'Anthropic Claude', envVar: 'ANTHROPIC_API_KEY', hasServer: serverHealth.hasAnthropicKey },
+            { id: 'openai' as LLMBackendType, name: 'OpenAI', envVar: 'OPENAI_API_KEY', hasServer: serverHealth.hasOpenAIKey },
+            { id: 'gemini' as LLMBackendType, name: 'Google Gemini', envVar: 'GEMINI_API_KEY', hasServer: serverHealth.hasGeminiKey }
+          ]).map(p => {
+            const hasCustomKey = Boolean(config.apiKeys?.[p.id]);
+            const isReady = p.hasServer || hasCustomKey;
 
-          <div className={`p-3 rounded-lg border text-xs transition-colors ${
-            serverHealth.hasAnthropicKey
-              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-              : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
-            <div className="flex items-center justify-between font-semibold">
-              <span>Anthropic Claude</span>
-              {serverHealth.hasAnthropicKey ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              ) : (
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">Unset</span>
-              )}
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1 font-mono">ANTHROPIC_API_KEY</div>
-          </div>
-
-          <div className={`p-3 rounded-lg border text-xs transition-colors ${
-            serverHealth.hasOpenAIKey
-              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-              : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
-            <div className="flex items-center justify-between font-semibold">
-              <span>OpenAI</span>
-              {serverHealth.hasOpenAIKey ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              ) : (
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">Unset</span>
-              )}
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1 font-mono">OPENAI_API_KEY</div>
-          </div>
-
-          <div className={`p-3 rounded-lg border text-xs transition-colors ${
-            serverHealth.hasGeminiKey
-              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-              : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
-            <div className="flex items-center justify-between font-semibold">
-              <span>Google Gemini</span>
-              {serverHealth.hasGeminiKey ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              ) : (
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">Unset</span>
-              )}
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1 font-mono">GEMINI_API_KEY</div>
-          </div>
+            return (
+              <div
+                key={p.id}
+                className={`p-3 rounded-lg border text-xs transition-colors ${
+                  isReady
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                    : 'bg-slate-50 border-slate-200 text-slate-600'
+                }`}
+              >
+                <div className="flex items-center justify-between font-semibold">
+                  <span>{p.name}</span>
+                  {hasCustomKey ? (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.5 rounded flex items-center">
+                      <CheckCircle2 className="w-3 h-3 mr-0.5 text-emerald-600" />
+                      Custom Key
+                    </span>
+                  ) : p.hasServer ? (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.5 rounded flex items-center">
+                      <CheckCircle2 className="w-3 h-3 mr-0.5 text-emerald-600" />
+                      Server Env
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">Unset</span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1 font-mono">{p.envVar}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -485,13 +494,20 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
           {filteredPresets.map(preset => {
             const isSelected = config.backend === preset.id;
             const isCloud = preset.category === 'cloud';
+            const userKey = config.apiKeys?.[preset.id] || '';
+            const isKeyVisible = Boolean(showKeyMap[preset.id]);
+            const isServerConfigured =
+              preset.id === 'openrouter' ? serverHealth.hasOpenRouterKey :
+              preset.id === 'claude' ? serverHealth.hasAnthropicKey :
+              preset.id === 'openai' ? serverHealth.hasOpenAIKey :
+              preset.id === 'gemini' ? serverHealth.hasGeminiKey : false;
 
             return (
-              <button
+              <div
                 key={preset.id}
-                id={`btn-select-backend-${preset.id}`}
+                id={`card-backend-${preset.id}`}
                 onClick={() => handleSelectBackend(preset.id)}
-                className={`p-4 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                className={`p-4 rounded-xl text-left border transition-all flex flex-col justify-between cursor-pointer ${
                   isSelected
                     ? 'border-slate-900 bg-slate-900 text-white shadow-xs ring-2 ring-slate-900/20'
                     : 'border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-white text-slate-800'
@@ -507,33 +523,136 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
                       )}
                       {preset.name}
                     </span>
-                    <span
-                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                        isSelected
-                          ? 'bg-white/20 text-white'
-                          : isCloud
-                          ? 'bg-sky-50 text-sky-700 border border-sky-200'
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      }`}
-                    >
-                      {preset.badge}
-                    </span>
+                    <div className="flex items-center space-x-1.5">
+                      {isServerConfigured && (
+                        <span
+                          title="API key configured on server"
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center ${
+                            isSelected
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          }`}
+                        >
+                          <Check className="w-2.5 h-2.5 mr-0.5" />
+                          Env Set
+                        </span>
+                      )}
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : isCloud
+                            ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        {preset.badge}
+                      </span>
+                    </div>
                   </div>
-                  <p className={`text-xs leading-relaxed ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                  <p className={`text-xs leading-relaxed mb-3 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
                     {preset.description}
                   </p>
+
+                  {/* API Key field for this specific provider */}
+                  {isCloud && (
+                    <div
+                      className={`mt-2 p-2.5 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'bg-slate-800/80 border-slate-700'
+                          : 'bg-white border-slate-200'
+                      }`}
+                      onClick={e => e.stopPropagation()} // don't trigger card reselect click
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <label
+                          htmlFor={`key-input-${preset.id}`}
+                          className={`text-[10px] font-bold tracking-wide uppercase flex items-center ${
+                            isSelected ? 'text-slate-300' : 'text-slate-600'
+                          }`}
+                        >
+                          <Key className="w-2.5 h-2.5 mr-1 text-amber-500" />
+                          API Key
+                          {userKey ? (
+                            <span className="ml-1.5 text-[9px] font-mono lowercase bg-emerald-500/20 text-emerald-400 px-1 py-0.2 rounded font-normal">
+                              saved
+                            </span>
+                          ) : isServerConfigured ? (
+                            <span className="ml-1.5 text-[9px] font-mono lowercase text-slate-400 font-normal">
+                              (using env default)
+                            </span>
+                          ) : null}
+                        </label>
+                        {preset.keyDocUrl && (
+                          <a
+                            href={preset.keyDocUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`text-[10px] flex items-center hover:underline ${
+                              isSelected ? 'text-sky-300 hover:text-sky-200' : 'text-sky-600 hover:text-sky-800'
+                            }`}
+                          >
+                            Get key <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="relative flex items-center">
+                        <input
+                          id={`key-input-${preset.id}`}
+                          type={isKeyVisible ? 'text' : 'password'}
+                          placeholder={
+                            isServerConfigured
+                              ? `Optional (Override server ${preset.envVar})`
+                              : (preset.keyPlaceholder || 'Paste API key here...')
+                          }
+                          value={userKey}
+                          onChange={e => handleUpdateApiKey(preset.id, e.target.value)}
+                          className={`w-full text-xs font-mono pl-2 pr-14 py-1 rounded border focus:outline-none transition-all ${
+                            isSelected
+                              ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500 focus:border-sky-400'
+                              : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-slate-800 focus:bg-white'
+                          }`}
+                        />
+                        <div className="absolute right-1 flex items-center space-x-1">
+                          {userKey && (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateApiKey(preset.id, '')}
+                              title="Clear key"
+                              className={`p-1 rounded hover:bg-slate-200/50 ${isSelected ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                            >
+                              <XCircle className="w-3 h-3" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleKeyVisibility(preset.id)}
+                            title={isKeyVisible ? 'Hide key' : 'Show key'}
+                            className={`p-1 rounded hover:bg-slate-200/50 ${isSelected ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                          >
+                            {isKeyVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-3 pt-2 border-t border-slate-200/40 flex items-center justify-between text-[11px] font-mono opacity-85">
                   <span className="truncate max-w-[170px]">{preset.defaultModel}</span>
-                  {isSelected && (
+                  {isSelected ? (
                     <span className="text-emerald-400 font-sans font-bold flex items-center text-[10px]">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
-                      Active
+                      Active Provider
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-sans text-slate-400 hover:text-slate-600">
+                      Click to activate
                     </span>
                   )}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -570,6 +689,69 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
                 className="w-full text-xs font-mono px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"
               />
             </div>
+
+            {/* Provider API Key field in active configuration */}
+            {isCurrentCloud && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="input-active-key" className="block text-xs font-semibold text-slate-700 flex items-center">
+                    <Key className="w-3 h-3 mr-1 text-amber-500" />
+                    {currentPreset.name} API Key
+                  </label>
+                  {currentPreset.keyDocUrl && (
+                    <a
+                      href={currentPreset.keyDocUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-sky-600 hover:text-sky-800 flex items-center hover:underline"
+                    >
+                      Get {currentPreset.name} API Key <ExternalLink className="w-2.5 h-2.5 ml-1" />
+                    </a>
+                  )}
+                </div>
+                <div className="relative flex items-center">
+                  <input
+                    id="input-active-key"
+                    type={showKeyMap[config.backend] ? 'text' : 'password'}
+                    placeholder={
+                      (config.backend === 'openrouter' && serverHealth.hasOpenRouterKey) ||
+                      (config.backend === 'claude' && serverHealth.hasAnthropicKey) ||
+                      (config.backend === 'openai' && serverHealth.hasOpenAIKey) ||
+                      (config.backend === 'gemini' && serverHealth.hasGeminiKey)
+                        ? `Configured in server environment (or paste custom key to override)`
+                        : (currentPreset.keyPlaceholder || 'Paste API key here...')
+                    }
+                    value={config.apiKeys?.[config.backend] || ''}
+                    onChange={e => handleUpdateApiKey(config.backend, e.target.value)}
+                    className="w-full text-xs font-mono pl-3 pr-16 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+                  />
+                  <div className="absolute right-2 flex items-center space-x-1.5">
+                    {config.apiKeys?.[config.backend] && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateApiKey(config.backend, '')}
+                        title="Clear key"
+                        className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleKeyVisibility(config.backend)}
+                      title={showKeyMap[config.backend] ? 'Hide key' : 'Show key'}
+                      className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                    >
+                      {showKeyMap[config.backend] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 flex items-center">
+                  <Lock className="w-2.5 h-2.5 mr-1 text-slate-400" />
+                  Your API key is sent only via secure server proxy for LLM calls and stored in your browser session.
+                </p>
+              </div>
+            )}
 
             <div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
@@ -870,18 +1052,20 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
               <div className="flex items-center justify-between">
                 <strong className="text-slate-900 flex items-center">
                   <Cloud className="w-3.5 h-3.5 text-sky-600 mr-1" />
-                  OpenRouter &amp; Claude Cloud Providers:
+                  Cloud Providers (OpenRouter, Claude, OpenAI, Gemini):
                 </strong>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed">
-                To connect to <strong>OpenRouter</strong> or <strong>Anthropic Claude</strong>, configure their API keys in your application environment settings (or <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">.env</code>):
+                You can enter your API keys <strong>directly on any provider card</strong> above or configure them in your server environment:
               </p>
               <pre className="p-2 bg-slate-900 text-emerald-400 rounded text-[11px] font-mono overflow-x-auto">
                 OPENROUTER_API_KEY=sk-or-v1-...{'\n'}
-                ANTHROPIC_API_KEY=sk-ant-...
+                ANTHROPIC_API_KEY=sk-ant-...{'\n'}
+                OPENAI_API_KEY=sk-proj-...{'\n'}
+                GEMINI_API_KEY=AIzaSy...
               </pre>
               <p className="text-[11px] text-slate-500">
-                All cloud requests are securely proxied with zero keys stored in browser storage or client-side bundles.
+                Any key you paste on a card is automatically used for that provider, securely proxied through the server to avoid browser CORS errors.
               </p>
             </div>
 

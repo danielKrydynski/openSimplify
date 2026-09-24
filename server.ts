@@ -42,7 +42,7 @@ app.get('/api/health', (req, res) => {
 
 // Proxy to test or list models from local LLM or cloud provider backend
 app.post('/api/llm/models', async (req, res) => {
-  const { backend, endpointUrl, customHeaders } = req.body;
+  const { backend, endpointUrl, customHeaders, apiKey } = req.body;
 
   try {
     const controller = new AbortController();
@@ -51,6 +51,13 @@ app.post('/api/llm/models', async (req, res) => {
     // 0. Gemini Built-In Provider
     if (backend === 'gemini') {
       clearTimeout(timeout);
+      const geminiKey = apiKey || process.env.GEMINI_API_KEY;
+      if (!geminiKey || geminiKey === 'MY_GEMINI_API_KEY') {
+        return res.status(401).json({
+          error: 'GEMINI_API_KEY is not configured.',
+          hint: 'Enter your Gemini API key directly on the Gemini provider card or configure GEMINI_API_KEY in environment secrets.'
+        });
+      }
       const geminiModels = [
         { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Fast & Cost Efficient)', isFree: false, provider: 'Google' },
         { id: 'gemini-3.6-pro', name: 'Gemini 3.6 Pro (Advanced Reasoning)', isFree: false, provider: 'Google' },
@@ -66,7 +73,7 @@ app.post('/api/llm/models', async (req, res) => {
 
     // 1. OpenRouter (Return full catalog with special tagging for free models)
     if (backend === 'openrouter') {
-      const openrouterKey = process.env.OPENROUTER_API_KEY;
+      const openrouterKey = apiKey || process.env.OPENROUTER_API_KEY;
       const headers: Record<string, string> = {
         'HTTP-Referer': process.env.APP_URL || 'https://opensimplify.local',
         'X-Title': 'OpenSimplify Job Assistant'
@@ -139,12 +146,12 @@ app.post('/api/llm/models', async (req, res) => {
 
     // 2. Claude (Anthropic Messages API)
     if (backend === 'claude') {
-      const anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+      const anthropicKey = apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
       if (!anthropicKey || anthropicKey === 'MY_ANTHROPIC_API_KEY' || anthropicKey === 'MY_CLAUDE_API_KEY') {
         clearTimeout(timeout);
         return res.status(401).json({
-          error: 'ANTHROPIC_API_KEY is not configured in server environment secrets.',
-          hint: 'Configure ANTHROPIC_API_KEY in the environment settings to use Claude 3.7 Sonnet, Claude 3.5 Sonnet, and Claude 3.5 Haiku.'
+          error: 'ANTHROPIC_API_KEY is not configured.',
+          hint: 'Enter your Anthropic Claude API key directly on the Claude provider card or in environment secrets.'
         });
       }
 
@@ -192,12 +199,12 @@ app.post('/api/llm/models', async (req, res) => {
 
     // 3. OpenAI Direct
     if (backend === 'openai') {
-      const openaiKey = process.env.OPENAI_API_KEY;
+      const openaiKey = apiKey || process.env.OPENAI_API_KEY;
       if (!openaiKey || openaiKey === 'MY_OPENAI_API_KEY') {
         clearTimeout(timeout);
         return res.status(401).json({
-          error: 'OPENAI_API_KEY is not configured in server environment secrets.',
-          hint: 'Configure OPENAI_API_KEY in the environment settings to use GPT-4o, GPT-4o mini, and o3-mini.'
+          error: 'OPENAI_API_KEY is not configured.',
+          hint: 'Enter your OpenAI API key directly on the OpenAI provider card or in environment secrets.'
         });
       }
 
@@ -308,7 +315,7 @@ app.post('/api/llm/models', async (req, res) => {
 
 // Proxy generation requests to local LLM or cloud provider backend
 app.post('/api/llm/generate', async (req, res) => {
-  const { backend, endpointUrl, model, prompt, systemPrompt, temperature, maxTokens, customHeaders } = req.body;
+  const { backend, endpointUrl, model, prompt, systemPrompt, temperature, maxTokens, customHeaders, apiKey } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: 'prompt is required' });
@@ -320,12 +327,12 @@ app.post('/api/llm/generate', async (req, res) => {
 
     // 1. OpenRouter Cloud Provider
     if (backend === 'openrouter') {
-      const openrouterKey = process.env.OPENROUTER_API_KEY;
+      const openrouterKey = apiKey || process.env.OPENROUTER_API_KEY;
       if (!openrouterKey || openrouterKey === 'MY_OPENROUTER_API_KEY') {
         clearTimeout(timeout);
         return res.status(401).json({
-          error: 'OPENROUTER_API_KEY is not configured in server environment secrets.',
-          hint: 'Configure OPENROUTER_API_KEY in the environment settings to use OpenRouter models.'
+          error: 'OPENROUTER_API_KEY is not configured.',
+          hint: 'Enter your OpenRouter API key directly on the OpenRouter provider card or in environment secrets.'
         });
       }
 
@@ -368,12 +375,12 @@ app.post('/api/llm/generate', async (req, res) => {
 
     // 2. Claude (Anthropic Direct Messages API)
     if (backend === 'claude') {
-      const anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+      const anthropicKey = apiKey || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
       if (!anthropicKey || anthropicKey === 'MY_ANTHROPIC_API_KEY' || anthropicKey === 'MY_CLAUDE_API_KEY') {
         clearTimeout(timeout);
         return res.status(401).json({
-          error: 'ANTHROPIC_API_KEY is not configured in server environment secrets.',
-          hint: 'Configure ANTHROPIC_API_KEY in the environment settings to use Claude.'
+          error: 'ANTHROPIC_API_KEY is not configured.',
+          hint: 'Enter your Anthropic Claude API key directly on the Claude provider card or in environment secrets.'
         });
       }
 
@@ -414,12 +421,12 @@ app.post('/api/llm/generate', async (req, res) => {
 
     // 3. OpenAI Direct
     if (backend === 'openai') {
-      const openaiKey = process.env.OPENAI_API_KEY;
+      const openaiKey = apiKey || process.env.OPENAI_API_KEY;
       if (!openaiKey || openaiKey === 'MY_OPENAI_API_KEY') {
         clearTimeout(timeout);
         return res.status(401).json({
-          error: 'OPENAI_API_KEY is not configured in server environment secrets.',
-          hint: 'Configure OPENAI_API_KEY in the environment settings to use OpenAI models.'
+          error: 'OPENAI_API_KEY is not configured.',
+          hint: 'Enter your OpenAI API key directly on the OpenAI provider card or in environment secrets.'
         });
       }
 
@@ -540,16 +547,20 @@ app.post('/api/llm/generate', async (req, res) => {
 
 // Optional fallback Gemini endpoint using server-side @google/genai SDK
 app.post('/api/gemini/generate', async (req, res) => {
-  const { prompt, systemPrompt, temperature } = req.body;
+  const { prompt, systemPrompt, temperature, apiKey } = req.body;
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
-  const ai = getGenAI();
+  let ai = getGenAI();
+  if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
+    ai = new GoogleGenAI({ apiKey });
+  }
+
   if (!ai) {
     return res.status(503).json({
       error: 'GEMINI_API_KEY is not configured or missing on the server',
-      hint: 'Use a local LLM backend (Ollama, LM Studio, vLLM) or configure GEMINI_API_KEY in secrets.'
+      hint: 'Enter your Gemini API key directly on the Gemini provider card or configure GEMINI_API_KEY in secrets.'
     });
   }
 

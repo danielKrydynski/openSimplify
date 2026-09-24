@@ -44,21 +44,28 @@ export const LLMService = {
   }> {
     const startTime = performance.now();
 
+    const currentApiKey = config.apiKeys?.[config.backend];
+
     if (config.backend === 'gemini') {
       try {
-        const res = await fetch('/api/health');
-        const data = await res.json();
+        const res = await fetch('/api/llm/models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            backend: 'gemini',
+            apiKey: currentApiKey
+          })
+        });
         const latencyMs = Math.round(performance.now() - startTime);
-        if (data.hasGeminiKey) {
-          const geminiModels = ['gemini-3.6-flash', 'gemini-3.6-pro', 'gemini-2.5-flash', 'gemini-2.5-pro'];
-          const geminiMeta = geminiModels.map(id => ({ id, name: id, provider: 'Google', isFree: false }));
-          return { success: true, models: geminiModels, modelsMetadata: geminiMeta, latencyMs };
+        const data = await res.json();
+        if (res.ok && data.success) {
+          return { success: true, models: data.models, modelsMetadata: data.modelsMetadata, latencyMs };
         } else {
           return {
             success: false,
             models: [],
             latencyMs,
-            error: 'GEMINI_API_KEY is not configured in server environment secrets.'
+            error: data.error || data.hint || 'GEMINI_API_KEY is not configured.'
           };
         }
       } catch (err: any) {
@@ -76,7 +83,8 @@ export const LLMService = {
           body: JSON.stringify({
             backend: config.backend,
             endpointUrl: config.endpointUrl,
-            customHeaders: config.customHeaders
+            customHeaders: config.customHeaders,
+            apiKey: currentApiKey
           })
         });
 
@@ -168,6 +176,8 @@ export const LLMService = {
     // Audit usage counter
     StorageService.incrementAuditUsage(Math.round(prompt.length / 4));
 
+    const currentApiKey = config.apiKeys?.[config.backend];
+
     if (config.backend === 'gemini') {
       const res = await fetch('/api/gemini/generate', {
         method: 'POST',
@@ -175,7 +185,8 @@ export const LLMService = {
         body: JSON.stringify({
           prompt,
           systemPrompt,
-          temperature: config.temperature
+          temperature: config.temperature,
+          apiKey: currentApiKey
         })
       });
 
@@ -201,7 +212,8 @@ export const LLMService = {
           systemPrompt,
           temperature: config.temperature,
           maxTokens: config.maxTokens,
-          customHeaders: config.customHeaders
+          customHeaders: config.customHeaders,
+          apiKey: currentApiKey
         })
       });
 
