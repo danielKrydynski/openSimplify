@@ -14,9 +14,13 @@ import {
   Key,
   ExternalLink,
   Sparkles,
-  Server
+  Server,
+  Search,
+  Gift,
+  Zap,
+  Layers
 } from 'lucide-react';
-import { LLMConfig, LLMBackendType } from '../types';
+import { LLMConfig, LLMBackendType, LLMModelMetadata } from '../types';
 import { StorageService } from '../services/storageService';
 import { LLMService } from '../services/llmService';
 
@@ -183,6 +187,10 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
 
   const auditData = StorageService.getAuditData();
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [modelFilter, setModelFilter] = useState<'all' | 'free' | 'popular'>('all');
+  const [isScanning, setIsScanning] = useState(false);
+
   // Load server key detection on mount
   useEffect(() => {
     LLMService.checkHealth().then(setServerHealth);
@@ -200,6 +208,7 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
       endpointUrl: preset.defaultUrl,
       model: preset.defaultModel,
       availableModels: preset.popularModels,
+      modelsMetadata: undefined,
       // Cloud backends must always use proxy to protect API keys
       mode: isCloud ? 'proxy' : config.mode,
       status: 'idle',
@@ -220,8 +229,8 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
     onConfigUpdated(updated);
   };
 
-  const handleTestConnection = async () => {
-    setIsTesting(true);
+  const handleScanAllModels = async () => {
+    setIsScanning(true);
     setTestResult(null);
 
     try {
@@ -235,9 +244,12 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
       const updated: LLMConfig = {
         ...config,
         status: res.success ? 'connected' : 'error',
-        statusMessage: res.success ? `Connected (${res.latencyMs}ms)` : res.error,
+        statusMessage: res.success
+          ? `Connected (${res.latencyMs}ms) • Found ${res.totalCount || res.models.length} models${res.freeCount ? ` (${res.freeCount} free)` : ''}`
+          : res.error,
         latencyMs: res.latencyMs,
         availableModels: res.models.length > 0 ? res.models : config.availableModels,
+        modelsMetadata: res.modelsMetadata,
         lastTested: new Date().toISOString()
       };
 
@@ -254,8 +266,12 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
     } catch (err: any) {
       setTestResult({ success: false, error: err.message, latency: 0 });
     } finally {
-      setIsTesting(false);
+      setIsScanning(false);
     }
+  };
+
+  const handleTestConnection = async () => {
+    return handleScanAllModels();
   };
 
   const handleCopy = (text: string, key: string) => {
@@ -293,15 +309,17 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
             </p>
           </div>
 
-          <button
-            id="btn-test-connection"
-            onClick={handleTestConnection}
-            disabled={isTesting}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors flex items-center self-start disabled:opacity-50 shadow-xs"
-          >
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${isTesting ? 'animate-spin text-emerald-400' : ''}`} />
-            {isTesting ? 'Pinging Backend...' : 'Test Connection'}
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              id="btn-test-connection"
+              onClick={handleScanAllModels}
+              disabled={isScanning}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors flex items-center self-start disabled:opacity-50 shadow-xs"
+            >
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${isScanning ? 'animate-spin text-emerald-400' : ''}`} />
+              {isScanning ? 'Scanning Models...' : 'Scan & Discover Models'}
+            </button>
+          </div>
         </div>
 
         {/* Test Result Alert */}
@@ -554,48 +572,153 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Model Identifier
-              </label>
-              <div className="flex space-x-2">
-                <input
-                  id="input-model-name"
-                  type="text"
-                  value={config.model}
-                  onChange={e => {
-                    const updated = { ...config, model: e.target.value };
-                    setConfig(updated);
-                    StorageService.saveLLMConfig(updated);
-                    onConfigUpdated(updated);
-                  }}
-                  className="w-full text-xs font-mono px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-
-                {config.availableModels.length > 0 && (
-                  <select
-                    id="select-discovered-model"
-                    value={config.model}
-                    onChange={e => {
-                      const updated = { ...config, model: e.target.value };
-                      setConfig(updated);
-                      StorageService.saveLLMConfig(updated);
-                      onConfigUpdated(updated);
-                    }}
-                    className="text-xs px-2.5 py-2 rounded-lg border border-slate-200 bg-slate-50 max-w-[150px]"
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Model Selection &amp; Catalog Browser
+                </label>
+                <div className="flex items-center space-x-2">
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {config.availableModels.length} models available
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleScanAllModels}
+                    disabled={isScanning}
+                    className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 flex items-center transition-colors"
                   >
-                    {config.availableModels.map(m => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                    <RefreshCw className={`w-3 h-3 mr-1 ${isScanning ? 'animate-spin' : ''}`} />
+                    {isScanning ? 'Scanning...' : 'Scan All Models'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Model Search & Filter bar */}
+              <div className="space-y-2 mb-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder={`Search ${config.availableModels.length} models (e.g. 'free', 'claude', 'deepseek', 'gpt-4o')...`}
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full text-xs pl-8 pr-3 py-1.5 rounded-md border border-slate-200 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+
+                  {/* Filter chips: All, Free Only, Popular */}
+                  <div className="flex items-center space-x-1.5 self-start">
+                    <button
+                      type="button"
+                      onClick={() => setModelFilter('all')}
+                      className={`text-[11px] px-2.5 py-1 rounded-md font-medium transition-colors ${
+                        modelFilter === 'all'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      All ({config.availableModels.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModelFilter('free')}
+                      className={`text-[11px] px-2.5 py-1 rounded-md font-medium transition-colors flex items-center ${
+                        modelFilter === 'free'
+                          ? 'bg-emerald-600 text-white font-semibold'
+                          : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <Gift className="w-3 h-3 mr-1" />
+                      Free Only
+                      {config.modelsMetadata && (
+                        <span className="ml-1 px-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
+                          {config.modelsMetadata.filter(m => m.isFree).length}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModelFilter('popular')}
+                      className={`text-[11px] px-2.5 py-1 rounded-md font-medium transition-colors flex items-center ${
+                        modelFilter === 'popular'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 mr-1 text-amber-500" />
+                      Top Picks
+                    </button>
+                  </div>
+                </div>
+
+                {/* Model Catalog Dropdown and Direct Identifier Input */}
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Choose from Discovered Catalog
+                    </label>
+                    <select
+                      id="select-discovered-model"
+                      value={config.model}
+                      onChange={e => {
+                        const updated = { ...config, model: e.target.value };
+                        setConfig(updated);
+                        StorageService.saveLLMConfig(updated);
+                        onConfigUpdated(updated);
+                      }}
+                      className="w-full text-xs font-mono px-3 py-2 rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 shadow-2xs"
+                    >
+                      {config.availableModels
+                        .filter(id => {
+                          const meta = config.modelsMetadata?.find(m => m.id === id);
+                          const isFree = meta?.isFree || id.endsWith(':free');
+                          const isPopular = currentPreset.popularModels.includes(id);
+
+                          if (modelFilter === 'free' && !isFree) return false;
+                          if (modelFilter === 'popular' && !isPopular) return false;
+                          if (searchTerm.trim()) {
+                            const term = searchTerm.toLowerCase();
+                            return id.toLowerCase().includes(term) || (meta?.name && meta.name.toLowerCase().includes(term));
+                          }
+                          return true;
+                        })
+                        .map(id => {
+                          const meta = config.modelsMetadata?.find(m => m.id === id);
+                          const isFree = meta?.isFree || id.endsWith(':free');
+                          return (
+                            <option key={id} value={id}>
+                              {isFree ? '🎁 [FREE] ' : ''}{id}{meta?.name && meta.name !== id ? ` (${meta.name})` : ''}
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </div>
+
+                  <div className="sm:w-1/3">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Exact Model ID
+                    </label>
+                    <input
+                      id="input-model-name"
+                      type="text"
+                      placeholder="e.g. deepseek/deepseek-r1:free"
+                      value={config.model}
+                      onChange={e => {
+                        const updated = { ...config, model: e.target.value };
+                        setConfig(updated);
+                        StorageService.saveLLMConfig(updated);
+                        onConfigUpdated(updated);
+                      }}
+                      className="w-full text-xs font-mono px-3 py-2 rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Quick Model Selector Pills */}
-              <div className="mt-2.5">
+              <div>
                 <span className="text-[11px] font-semibold text-slate-500 block mb-1.5">
-                  Popular Models for {currentPreset.name}:
+                  Popular &amp; Recommended Models:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {currentPreset.popularModels.map(m => (
@@ -613,6 +736,36 @@ export const BackendSettingsView: React.FC<BackendSettingsViewProps> = ({
                       {m}
                     </button>
                   ))}
+
+                  {/* If OpenRouter or Local, offer free model quick picks */}
+                  {config.backend === 'openrouter' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickSelectModel('meta-llama/llama-3.3-70b-instruct:free')}
+                        className={`text-[11px] font-mono px-2 py-0.5 rounded-md border transition-colors flex items-center ${
+                          config.model === 'meta-llama/llama-3.3-70b-instruct:free'
+                            ? 'bg-emerald-700 text-white border-emerald-700 font-semibold'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}
+                      >
+                        <Gift className="w-3 h-3 mr-1" />
+                        Llama 3.3 70B [Free]
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickSelectModel('deepseek/deepseek-r1:free')}
+                        className={`text-[11px] font-mono px-2 py-0.5 rounded-md border transition-colors flex items-center ${
+                          config.model === 'deepseek/deepseek-r1:free'
+                            ? 'bg-emerald-700 text-white border-emerald-700 font-semibold'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}
+                      >
+                        <Gift className="w-3 h-3 mr-1" />
+                        DeepSeek R1 [Free]
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

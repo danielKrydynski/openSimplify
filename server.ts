@@ -46,26 +46,38 @@ app.post('/api/llm/models', async (req, res) => {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20 second timeout for model discovery
 
-    // 1. OpenRouter
+    // 0. Gemini Built-In Provider
+    if (backend === 'gemini') {
+      clearTimeout(timeout);
+      const geminiModels = [
+        { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Fast & Cost Efficient)', isFree: false, provider: 'Google' },
+        { id: 'gemini-3.6-pro', name: 'Gemini 3.6 Pro (Advanced Reasoning)', isFree: false, provider: 'Google' },
+        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', isFree: false, provider: 'Google' },
+        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', isFree: false, provider: 'Google' }
+      ];
+      return res.json({
+        success: true,
+        models: geminiModels.map(m => m.id),
+        modelsMetadata: geminiModels
+      });
+    }
+
+    // 1. OpenRouter (Return full catalog with special tagging for free models)
     if (backend === 'openrouter') {
       const openrouterKey = process.env.OPENROUTER_API_KEY;
-      if (!openrouterKey || openrouterKey === 'MY_OPENROUTER_API_KEY') {
-        clearTimeout(timeout);
-        return res.status(401).json({
-          error: 'OPENROUTER_API_KEY is not configured in server environment secrets.',
-          hint: 'Configure OPENROUTER_API_KEY in the environment settings to unlock 100+ cloud models including Claude, DeepSeek, and GPT-4o.'
-        });
+      const headers: Record<string, string> = {
+        'HTTP-Referer': process.env.APP_URL || 'https://opensimplify.local',
+        'X-Title': 'OpenSimplify Job Assistant'
+      };
+      if (openrouterKey && openrouterKey !== 'MY_OPENROUTER_API_KEY') {
+        headers['Authorization'] = `Bearer ${openrouterKey}`;
       }
 
       const response = await fetch('https://openrouter.ai/api/v1/models', {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${openrouterKey}`,
-          'HTTP-Referer': process.env.APP_URL || 'https://opensimplify.local',
-          'X-Title': 'OpenSimplify Job Assistant'
-        },
+        headers,
         signal: controller.signal
       });
       clearTimeout(timeout);
@@ -78,9 +90,26 @@ app.post('/api/llm/models', async (req, res) => {
       }
 
       const data = await response.json();
-      const allModels: string[] = Array.isArray(data.data) ? data.data.map((m: any) => m.id) : [];
-      // Prioritize top popular models
-      const topPicks: string[] = [
+      const rawList: any[] = Array.isArray(data.data) ? data.data : [];
+
+      const modelsMetadata = rawList.map((m: any) => {
+        const isFree = Boolean(
+          m.id?.endsWith(':free') ||
+          (m.pricing?.prompt === '0' && m.pricing?.completion === '0') ||
+          (m.pricing?.prompt === 0 && m.pricing?.completion === 0)
+        );
+        return {
+          id: m.id,
+          name: m.name || m.id,
+          contextLength: m.context_length,
+          isFree,
+          provider: m.id.split('/')[0] || 'OpenRouter',
+          description: m.description ? m.description.slice(0, 160) : undefined
+        };
+      });
+
+      // Priority ordering: Top picks first, then Free models, then the rest
+      const topPicks = [
         'anthropic/claude-3.7-sonnet',
         'anthropic/claude-3.5-haiku',
         'openai/gpt-4o',
@@ -90,11 +119,22 @@ app.post('/api/llm/models', async (req, res) => {
         'google/gemini-2.5-flash',
         'mistralai/mistral-large-2411'
       ];
-      const foundTop = topPicks.filter((m: string) => allModels.includes(m));
-      const otherModels = allModels.filter((m: string) => !topPicks.includes(m)).slice(0, 40);
-      const models = [...foundTop, ...otherModels];
 
-      return res.json({ success: true, models: models.length > 0 ? models : topPicks });
+      const freeIds = modelsMetadata.filter(m => m.isFree).map(m => m.id);
+      const topFound = topPicks.filter(id => modelsMetadata.some(m => m.id === id));
+      const remaining = modelsMetadata
+        .map(m => m.id)
+        .filter(id => !topFound.includes(id) && !freeIds.includes(id));
+
+      const orderedModelIds = Array.from(new Set([...topFound, ...freeIds, ...remaining]));
+
+      return res.json({
+        success: true,
+        models: orderedModelIds,
+        modelsMetadata,
+        totalCount: orderedModelIds.length,
+        freeCount: freeIds.length
+      });
     }
 
     // 2. Claude (Anthropic Messages API)
@@ -115,6 +155,7 @@ app.post('/api/llm/models', async (req, res) => {
         'claude-3-opus-20240229'
       ];
 
+      let discoveredModels = defaultClaudeModels;
       try {
         const response = await fetch('https://api.anthropic.com/v1/models', {
           method: 'GET',
@@ -130,14 +171,23 @@ app.post('/api/llm/models', async (req, res) => {
           const data = await response.json();
           if (Array.isArray(data.data)) {
             const fetched = data.data.map((m: any) => m.id);
-            return res.json({ success: true, models: fetched.length > 0 ? fetched : defaultClaudeModels });
+            if (fetched.length > 0) {
+              discoveredModels = Array.from(new Set([...defaultClaudeModels, ...fetched]));
+            }
           }
         }
       } catch {
-        // Fallback to verified Claude model list if models endpoint is not accessible on user tier
+        // Fallback to verified Claude model list
       }
 
-      return res.json({ success: true, models: defaultClaudeModels });
+      const modelsMetadata = discoveredModels.map(id => ({
+        id,
+        name: id,
+        provider: 'Anthropic',
+        isFree: false
+      }));
+
+      return res.json({ success: true, models: discoveredModels, modelsMetadata });
     }
 
     // 3. OpenAI Direct
@@ -151,7 +201,8 @@ app.post('/api/llm/models', async (req, res) => {
         });
       }
 
-      const defaultOpenAIModels = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo'];
+      const defaultOpenAIModels = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1-mini', 'gpt-4-turbo'];
+      let discovered = defaultOpenAIModels;
       try {
         const response = await fetch('https://api.openai.com/v1/models', {
           method: 'GET',
@@ -163,17 +214,28 @@ app.post('/api/llm/models', async (req, res) => {
         if (response.ok) {
           const data = await response.json();
           if (Array.isArray(data.data)) {
-            const filtered = data.data
+            const fetched = data.data
               .map((m: any) => m.id)
-              .filter((id: string) => id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3'));
-            return res.json({ success: true, models: filtered.length > 0 ? filtered : defaultOpenAIModels });
+              .filter((id: string) =>
+                id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('chatgpt-')
+              );
+            if (fetched.length > 0) {
+              discovered = Array.from(new Set([...defaultOpenAIModels, ...fetched]));
+            }
           }
         }
       } catch {
         // Fallback
       }
 
-      return res.json({ success: true, models: defaultOpenAIModels });
+      const modelsMetadata = discovered.map(id => ({
+        id,
+        name: id,
+        provider: 'OpenAI',
+        isFree: false
+      }));
+
+      return res.json({ success: true, models: discovered, modelsMetadata });
     }
 
     // 4. Local or custom OpenAI-compatible daemon (Ollama, LM Studio, vLLM, LocalAI)
@@ -212,14 +274,28 @@ app.post('/api/llm/models', async (req, res) => {
 
     const data = await response.json();
     let models: string[] = [];
+    let modelsMetadata: any[] = [];
 
     if (backend === 'ollama' && Array.isArray((data as any).models)) {
       models = (data as any).models.map((m: any) => m.name || m.model);
+      modelsMetadata = (data as any).models.map((m: any) => ({
+        id: m.name || m.model,
+        name: m.name || m.model,
+        isFree: true,
+        provider: 'Local Ollama',
+        description: m.details ? `${m.details.family || ''} ${m.details.parameter_size || ''}`.trim() : 'Local model'
+      }));
     } else if (Array.isArray((data as any).data)) {
       models = (data as any).data.map((m: any) => m.id);
+      modelsMetadata = (data as any).data.map((m: any) => ({
+        id: m.id,
+        name: m.id,
+        isFree: true,
+        provider: backend.toUpperCase()
+      }));
     }
 
-    return res.json({ success: true, models, raw: data });
+    return res.json({ success: true, models, modelsMetadata, raw: data });
   } catch (error: any) {
     return res.status(502).json({
       error: error.name === 'AbortError' ? 'Connection timed out to endpoint' : error.message,

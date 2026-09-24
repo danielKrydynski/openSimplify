@@ -4,11 +4,21 @@
 
 export type LLMBackendType = 'ollama' | 'lmstudio' | 'vllm' | 'localai' | 'custom' | 'openrouter' | 'claude' | 'openai' | 'gemini';
 
+export interface LLMModelMetadata {
+  id: string;
+  name?: string;
+  contextLength?: number;
+  isFree?: boolean;
+  provider?: string;
+  description?: string;
+}
+
 export interface LLMConfig {
   backend: LLMBackendType;
   endpointUrl: string;
   model: string;
   availableModels: string[];
+  modelsMetadata?: LLMModelMetadata[];
   temperature: number;
   maxTokens: number;
   customHeaders?: Record<string, string>;

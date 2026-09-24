@@ -33,7 +33,15 @@ export const LLMService = {
   /**
    * Tests the connection to the configured LLM backend and discovers available models.
    */
-  async testConnection(config: LLMConfig): Promise<{ success: boolean; models: string[]; latencyMs: number; error?: string }> {
+  async testConnection(config: LLMConfig): Promise<{
+    success: boolean;
+    models: string[];
+    modelsMetadata?: any[];
+    totalCount?: number;
+    freeCount?: number;
+    latencyMs: number;
+    error?: string;
+  }> {
     const startTime = performance.now();
 
     if (config.backend === 'gemini') {
@@ -42,7 +50,9 @@ export const LLMService = {
         const data = await res.json();
         const latencyMs = Math.round(performance.now() - startTime);
         if (data.hasGeminiKey) {
-          return { success: true, models: ['gemini-3.6-flash', 'gemini-3.6-pro'], latencyMs };
+          const geminiModels = ['gemini-3.6-flash', 'gemini-3.6-pro', 'gemini-2.5-flash', 'gemini-2.5-pro'];
+          const geminiMeta = geminiModels.map(id => ({ id, name: id, provider: 'Google', isFree: false }));
+          return { success: true, models: geminiModels, modelsMetadata: geminiMeta, latencyMs };
         } else {
           return {
             success: false,
@@ -77,6 +87,9 @@ export const LLMService = {
           return {
             success: true,
             models: data.models && data.models.length > 0 ? data.models : [config.model || 'default-model'],
+            modelsMetadata: data.modelsMetadata,
+            totalCount: data.totalCount || (data.models ? data.models.length : 0),
+            freeCount: data.freeCount || (data.modelsMetadata ? data.modelsMetadata.filter((m: any) => m.isFree).length : 0),
             latencyMs
           };
         } else {
